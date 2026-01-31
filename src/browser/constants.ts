@@ -6,3 +6,13 @@ export const DEFAULT_BROWSER_DEFAULT_PROFILE_NAME = "chrome";
 export const DEFAULT_AI_SNAPSHOT_MAX_CHARS = 80_000;
 export const DEFAULT_AI_SNAPSHOT_EFFICIENT_MAX_CHARS = 10_000;
 export const DEFAULT_AI_SNAPSHOT_EFFICIENT_DEPTH = 6;
+
+// Timeout thresholds in milliseconds for browser operations
+export const BROWSER_DEFAULT_TIMEOUT_MS = 8000;
+export const BROWSER_MIN_TIMEOUT_MS = 500;
+export const BROWSER_MAX_TIMEOUT_MS = 60_000;
+export const BROWSER_LARGE_TIMEOUT_MS = 20_000;
+export const BROWSER_DEFAULT_WAIT_TIME_MS = 2000;
+export const BROWSER_SHORT_TIMEOUT_MS = 5000;
+export const BROWSER_LONG_TIMEOUT_MS = 20000;
+export const BROWSER_VERY_LONG_TIMEOUT_MS = 30000;

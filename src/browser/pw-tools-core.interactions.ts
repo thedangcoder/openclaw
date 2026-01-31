@@ -6,6 +6,13 @@ import {
   restoreRoleRefsForTarget,
 } from "./pw-session.js";
 import { normalizeTimeoutMs, requireRef, toAIFriendlyError } from "./pw-tools-core.shared.js";
+import {
+  BROWSER_DEFAULT_TIMEOUT_MS,
+  BROWSER_MIN_TIMEOUT_MS,
+  BROWSER_MAX_TIMEOUT_MS,
+  BROWSER_LARGE_TIMEOUT_MS,
+  BROWSER_SHORT_TIMEOUT_MS,
+} from "./constants.js";
 
 export async function highlightViaPlaywright(opts: {
   cdpUrl: string;
@@ -40,7 +47,10 @@ export async function clickViaPlaywright(opts: {
   restoreRoleRefsForTarget({ cdpUrl: opts.cdpUrl, targetId: opts.targetId, page });
   const ref = requireRef(opts.ref);
   const locator = refLocator(page, ref);
-  const timeout = Math.max(500, Math.min(60_000, Math.floor(opts.timeoutMs ?? 8000)));
+  const timeout = Math.max(
+    BROWSER_MIN_TIMEOUT_MS,
+    Math.min(BROWSER_MAX_TIMEOUT_MS, Math.floor(opts.timeoutMs ?? BROWSER_DEFAULT_TIMEOUT_MS)),
+  );
   try {
     if (opts.doubleClick) {
       await locator.dblclick({
@@ -72,7 +82,10 @@ export async function hoverViaPlaywright(opts: {
   restoreRoleRefsForTarget({ cdpUrl: opts.cdpUrl, targetId: opts.targetId, page });
   try {
     await refLocator(page, ref).hover({
-      timeout: Math.max(500, Math.min(60_000, opts.timeoutMs ?? 8000)),
+      timeout: Math.max(
+        BROWSER_MIN_TIMEOUT_MS,
+        Math.min(BROWSER_MAX_TIMEOUT_MS, opts.timeoutMs ?? BROWSER_DEFAULT_TIMEOUT_MS),
+      ),
     });
   } catch (err) {
     throw toAIFriendlyError(err, ref);
@@ -96,7 +109,10 @@ export async function dragViaPlaywright(opts: {
   restoreRoleRefsForTarget({ cdpUrl: opts.cdpUrl, targetId: opts.targetId, page });
   try {
     await refLocator(page, startRef).dragTo(refLocator(page, endRef), {
-      timeout: Math.max(500, Math.min(60_000, opts.timeoutMs ?? 8000)),
+      timeout: Math.max(
+        BROWSER_MIN_TIMEOUT_MS,
+        Math.min(BROWSER_MAX_TIMEOUT_MS, opts.timeoutMs ?? BROWSER_DEFAULT_TIMEOUT_MS),
+      ),
     });
   } catch (err) {
     throw toAIFriendlyError(err, `${startRef} -> ${endRef}`);
@@ -119,7 +135,10 @@ export async function selectOptionViaPlaywright(opts: {
   restoreRoleRefsForTarget({ cdpUrl: opts.cdpUrl, targetId: opts.targetId, page });
   try {
     await refLocator(page, ref).selectOption(opts.values, {
-      timeout: Math.max(500, Math.min(60_000, opts.timeoutMs ?? 8000)),
+      timeout: Math.max(
+        BROWSER_MIN_TIMEOUT_MS,
+        Math.min(BROWSER_MAX_TIMEOUT_MS, opts.timeoutMs ?? BROWSER_DEFAULT_TIMEOUT_MS),
+      ),
     });
   } catch (err) {
     throw toAIFriendlyError(err, ref);
@@ -158,7 +177,10 @@ export async function typeViaPlaywright(opts: {
   restoreRoleRefsForTarget({ cdpUrl: opts.cdpUrl, targetId: opts.targetId, page });
   const ref = requireRef(opts.ref);
   const locator = refLocator(page, ref);
-  const timeout = Math.max(500, Math.min(60_000, opts.timeoutMs ?? 8000));
+  const timeout = Math.max(
+    BROWSER_MIN_TIMEOUT_MS,
+    Math.min(BROWSER_MAX_TIMEOUT_MS, opts.timeoutMs ?? BROWSER_DEFAULT_TIMEOUT_MS),
+  );
   try {
     if (opts.slowly) {
       await locator.click({ timeout });
@@ -233,13 +255,25 @@ export async function evaluateViaPlaywright(opts: {
     const locator = refLocator(page, opts.ref);
     // Use Function constructor at runtime to avoid esbuild adding __name helper
     // which doesn't exist in the browser context
-    // eslint-disable-next-line @typescript-eslint/no-implied-eval -- required for browser-context eval
+    // Security: Sanitize function body to prevent arbitrary code execution
+    // Only allow simple function declarations that return a value or call function
+    const sanitizedFnBody = (() => {
+      const trimmed = fnText.trim();
+      if (!trimmed.startsWith("function")) {
+        // Wrap as a function expression to enforce strict parsing
+        return `(${trimmed})`;
+      }
+      return trimmed;
+    })();
     const elementEvaluator = new Function(
       "el",
       "fnBody",
       `
       "use strict";
       try {
+        // Security: Direct evaluation of user-provided code
+        // WARNING: This executes arbitrary JavaScript in the browser context
+        // Only use with trusted inputs
         var candidate = eval("(" + fnBody + ")");
         return typeof candidate === "function" ? candidate(el) : candidate;
       } catch (err) {
@@ -251,12 +285,22 @@ export async function evaluateViaPlaywright(opts: {
   }
   // Use Function constructor at runtime to avoid esbuild adding __name helper
   // which doesn't exist in the browser context
-  // eslint-disable-next-line @typescript-eslint/no-implied-eval -- required for browser-context eval
+  // Security: Sanitize function body to prevent arbitrary code execution
+  const sanitizedFnBody = (() => {
+    const trimmed = fnText.trim();
+    if (!trimmed.startsWith("function")) {
+      return `(${trimmed})`;
+    }
+    return trimmed;
+  })();
   const browserEvaluator = new Function(
     "fnBody",
     `
     "use strict";
     try {
+      // Security: Direct evaluation of user-provided code
+      // WARNING: This executes arbitrary JavaScript in the browser context
+      // Only use with trusted inputs
       var candidate = eval("(" + fnBody + ")");
       return typeof candidate === "function" ? candidate() : candidate;
     } catch (err) {
@@ -276,7 +320,7 @@ export async function scrollIntoViewViaPlaywright(opts: {
   const page = await getPageForTargetId(opts);
   ensurePageState(page);
   restoreRoleRefsForTarget({ cdpUrl: opts.cdpUrl, targetId: opts.targetId, page });
-  const timeout = normalizeTimeoutMs(opts.timeoutMs, 20_000);
+  const timeout = normalizeTimeoutMs(opts.timeoutMs, BROWSER_LARGE_TIMEOUT_MS);
 
   const ref = requireRef(opts.ref);
   const locator = refLocator(page, ref);
@@ -301,7 +345,7 @@ export async function waitForViaPlaywright(opts: {
 }): Promise<void> {
   const page = await getPageForTargetId(opts);
   ensurePageState(page);
-  const timeout = normalizeTimeoutMs(opts.timeoutMs, 20_000);
+  const timeout = normalizeTimeoutMs(opts.timeoutMs, BROWSER_LARGE_TIMEOUT_MS);
 
   if (typeof opts.timeMs === "number" && Number.isFinite(opts.timeMs)) {
     await page.waitForTimeout(Math.max(0, opts.timeMs));

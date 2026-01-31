@@ -8,7 +8,27 @@ import { sliceUtf16Safe } from "../utils.js";
 import { assertSandboxPath } from "./sandbox-paths.js";
 import { killProcessTree } from "./shell-utils.js";
 
+// Chunk size for processing large output streams (4KB)
 const CHUNK_LIMIT = 8 * 1024;
+
+// Maximum output size in characters (200KB) to prevent memory issues
+const MAX_OUTPUT_CHARS = 200_000;
+
+// Timeout thresholds in milliseconds
+const DEFAULT_TIMEOUT_MS = 500;
+const DEFAULT_MIN_TIMEOUT_MS = 500;
+const DEFAULT_MAX_TIMEOUT_MS = 60_000;
+const DEFAULT_LARGE_TIMEOUT_MS = 20_000;
+
+// UI element dimensions
+const UI_LABELS_MAX_COUNT = 150;
+const UI_LABEL_BOX_HEIGHT = 2;
+const UI_LABEL_TAG_HEIGHT = 18;
+
+// Shell command configuration
+const SHELL_COMMAND_PREFIX = "sh";
+const SHELL_COMMAND_ARGS = "-lc";
+const SHELL_PATH_ENV_VAR = "OPENCLAW_PREPEND_PATH";
 
 export type BashSandboxConfig = {
   containerName: string;
@@ -78,7 +98,7 @@ export function buildDockerExecArgs(params: {
   const pathExport = hasCustomPath
     ? 'export PATH="${OPENCLAW_PREPEND_PATH}:$PATH"; unset OPENCLAW_PREPEND_PATH; '
     : "";
-  args.push(params.containerName, "sh", "-lc", `${pathExport}${params.command}`);
+  args.push(params.containerName, SHELL_COMMAND_PREFIX, SHELL_COMMAND_ARGS, `${pathExport}${params.command}`);
   return args;
 }
 
@@ -182,6 +202,120 @@ export function truncateMiddle(str: string, max: number) {
   }
   const half = Math.floor((max - 3) / 2);
   return `${sliceUtf16Safe(str, 0, half)}...${sliceUtf16Safe(str, -half)}`;
+}
+
+// Maximum characters for UI element labels in screenshot
+const SCREENSHOT_LABEL_MAX_COUNT = 150;
+
+export function sliceLogLines(
+  text: string,
+  offset?: number,
+  limit?: number,
+): { slice: string; totalLines: number; totalChars: number } {
+  if (!text) {
+    return { slice: "", totalLines: 0, totalChars: 0 };
+  }
+  const normalized = text.replace(/\r\n/g, "\n");
+  const lines = normalized.split("\n");
+  if (lines.length > 0 && lines[lines.length - 1] === "") {
+    lines.pop();
+  }
+  const totalLines = lines.length;
+  const totalChars = text.length;
+  let start =
+    typeof offset === "number" && Number.isFinite(offset) ? Math.max(0, Math.floor(offset)) : 0;
+  if (limit !== undefined && offset === undefined) {
+    const tailCount = Math.max(0, Math.floor(limit));
+    start = Math.max(totalLines - tailCount, 0);
+  }
+  const end =
+    typeof limit === "number" && Number.isFinite(limit)
+      ? start + Math.max(0, Math.floor(limit))
+      : undefined;
+  return { slice: lines.slice(start, end).join("\n"), totalLines, totalChars };
+}
+
+export function deriveSessionName(command: string): string | undefined {
+  const tokens = tokenizeCommand(command);
+  if (tokens.length === 0) {
+    return undefined;
+  }
+  const verb = tokens[0];
+  let target = tokens.slice(1).find((t) => !t.startsWith("-"));
+  if (!target) {
+    target = tokens[1];
+  }
+  if (!target) {
+    return verb;
+  }
+  const cleaned = truncateMiddle(stripQuotes(target), 48);
+  return `${stripQuotes(verb)} ${cleaned}`;
+}
+
+function tokenizeCommand(command: string): string[] {
+  const matches = command.match(/(?:[^\s"']+|"(?:\\.|[^"])*"|'(?:\\.|[^'])*')+/g) ?? [];
+  return matches.map((token) => stripQuotes(token)).filter(Boolean);
+}
+
+function stripQuotes(value: string): string {
+  const trimmed = value.trim();
+  if (
+    (trimmed.startsWith('"') && trimmed.endsWith('"')) ||
+    (trimmed.startsWith("'") && trimmed.endsWith("'"))
+  ) {
+    return trimmed.slice(1, -1);
+  }
+  return trimmed;
+}
+
+export function formatDuration(ms: number) {
+  if (ms < 1000) {
+    return `${ms}ms`;
+  }
+  const seconds = Math.floor(ms / 1000);
+  if (seconds < 60) {
+    return `${seconds}s`;
+  }
+  const minutes = Math.floor(seconds / 60);
+  const rem = seconds % 60;
+  return `${minutes}m${rem.toString().padStart(2, "0")}s`;
+}
+
+export function pad(str: string, width: number) {
+  if (str.length >= width) {
+    return str;
+  }
+  return str + " ".repeat(width - str.length);
+}
+
+// Apply clamping to ensure values stay within safe bounds
+export function clampNumber(
+  value: number | undefined,
+  defaultValue: number,
+  min: number,
+  max: number,
+) {
+  if (value === undefined || Number.isNaN(value)) {
+    return defaultValue;
+  }
+  return Math.min(Math.max(value, min), max);
+}
+
+export function readEnvInt(key: string) {
+  const raw = process.env[key];
+  if (!raw) {
+    return undefined;
+  }
+  const parsed = Number.parseInt(raw, 10);
+  return Number.isFinite(parsed) ? parsed : undefined;
+}
+
+export function chunkString(input: string, limit = CHUNK_LIMIT) {
+  const chunks: string[] = [];
+  for (let i = 0; i < input.length; i += limit) {
+    chunks.push(input.slice(i, i + limit));
+  }
+  return chunks;
 }
 
 export function sliceLogLines(

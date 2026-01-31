@@ -20,6 +20,11 @@ import {
   injectCanvasLiveReload,
 } from "./a2ui.js";
 
+// Canvas live reload timeout constants in milliseconds
+const CANVAS_LIVE_RELOAD_DEBOUNCE_MS = 75;
+const CANVAS_LIVE_RELOAD_WATCH_STABILITY_MS = 75;
+const CANVAS_LIVE_RELOAD_WATCH_POLL_MS = 10;
+
 export type CanvasHostOpts = {
   runtime: RuntimeEnv;
   rootDir?: string;
@@ -111,11 +116,12 @@ function defaultIndexHTML() {
         typeof window.openclawCanvasA2UIAction.postMessage === "function")
     );
   const hasHelper = () => typeof window.openclawSendUserAction === "function";
-  statusEl.innerHTML =
+  const statusHtml =
     "Bridge: " +
     (hasHelper() ? "<span class='ok'>ready</span>" : "<span class='bad'>missing</span>") +
     " · iOS=" + (hasIOS() ? "yes" : "no") +
     " · Android=" + (hasAndroid() ? "yes" : "no");
+  statusEl.innerHTML = statusHtml;
 
   const onStatus = (ev) => {
     const d = ev && ev.detail || {};
@@ -294,7 +300,7 @@ export async function createCanvasHostHandler(
     debounce = setTimeout(() => {
       debounce = null;
       broadcastReload();
-    }, 75);
+    }, CANVAS_LIVE_RELOAD_DEBOUNCE_MS);
     debounce.unref?.();
   };
 
@@ -302,7 +308,7 @@ export async function createCanvasHostHandler(
   const watcher = liveReload
     ? chokidar.watch(rootReal, {
         ignoreInitial: true,
-        awaitWriteFinish: { stabilityThreshold: 75, pollInterval: 10 },
+        awaitWriteFinish: { stabilityThreshold: CANVAS_LIVE_RELOAD_WATCH_STABILITY_MS, pollInterval: CANVAS_LIVE_RELOAD_WATCH_POLL_MS },
         usePolling: opts.allowInTests === true,
         ignored: [
           /(^|[\\/])\../, // dotfiles

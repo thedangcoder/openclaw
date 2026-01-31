@@ -40,6 +40,12 @@ import {
 } from "./bash-process-registry.js";
 import type { BashSandboxConfig } from "./bash-tools.shared.js";
 import {
+  MAX_OUTPUT_CHARS,
+  DEFAULT_MIN_TIMEOUT_MS,
+  DEFAULT_LARGE_TIMEOUT_MS,
+  SHELL_PATH_ENV_VAR,
+} from "./bash-tools.shared.js";
+import {
   buildDockerExecArgs,
   buildSandboxEnv,
   chunkString,
@@ -59,15 +65,15 @@ import { parseAgentSessionKey, resolveAgentIdFromSessionKey } from "../routing/s
 
 const DEFAULT_MAX_OUTPUT = clampNumber(
   readEnvInt("PI_BASH_MAX_OUTPUT_CHARS"),
-  200_000,
+  MAX_OUTPUT_CHARS,
   1_000,
-  200_000,
+  MAX_OUTPUT_CHARS,
 );
 const DEFAULT_PENDING_MAX_OUTPUT = clampNumber(
   readEnvInt("OPENCLAW_BASH_PENDING_MAX_OUTPUT_CHARS"),
-  200_000,
+  MAX_OUTPUT_CHARS,
   1_000,
-  200_000,
+  MAX_OUTPUT_CHARS,
 );
 const DEFAULT_PATH =
   process.env.PATH ?? "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin";
